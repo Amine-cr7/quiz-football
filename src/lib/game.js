@@ -162,14 +162,14 @@ async function createNewGame(userId, preferredLanguage, gamesCol) {
       };
     });
 
-    // Randomly select 5 questions
-    if (allQuestions.length < 5) {
+    // Randomly select 10 questions
+    if (allQuestions.length < 10) {
       throw new Error('Not enough questions available in the database');
     }
 
     const selectedQuestions = allQuestions
       .sort(() => Math.random() - 0.5)
-      .slice(0, 5);
+      .slice(0, 10);
 
     const gameData = {
       players: [userId],

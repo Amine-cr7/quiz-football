@@ -31,10 +31,55 @@ export default function DashboardPage() {
   const [divisionProgress, setDivisionProgress] = useState(null);
   const [showLanguageSelector, setShowLanguageSelector] = useState(false);
   const [selectedLanguage, setSelectedLanguage] = useState('en');
+  const [selectedMode, setSelectedMode] = useState('quiz');
   const [isLoadingStats, setIsLoadingStats] = useState(true);
   const [error, setError] = useState(null);
   const [gameError, setGameError] = useState(null);
   const [isStartingGame, setIsStartingGame] = useState(false);
+
+  // Game modes configuration
+  const gameModes = [
+    {
+      id: 'quiz',
+      name: 'Quiz Mode',
+      description: '10 questions, ranked matches',
+      icon: '🧠',
+      difficulty: 'Competitive',
+      duration: '~5 min',
+      available: true,
+      features: ['Ranked matches', '10 questions', 'Real-time multiplayer', 'Division system']
+    },
+    {
+      id: 'blitz',
+      name: 'Blitz Mode',
+      description: '5 questions, quick matches',
+      icon: '⚡',
+      difficulty: 'Fast',
+      duration: '~2 min',
+      available: false,
+      features: ['Quick matches', '5 questions', 'No ranking', 'Casual play']
+    },
+    {
+      id: 'tournament',
+      name: 'Tournament',
+      description: 'Bracket-style competition',
+      icon: '🏆',
+      difficulty: 'Elite',
+      duration: '~30 min',
+      available: false,
+      features: ['8-player brackets', 'Prize pools', 'Weekly events', 'Elimination rounds']
+    },
+    {
+      id: 'practice',
+      name: 'Practice Mode',
+      description: 'Solo practice with AI',
+      icon: '🎯',
+      difficulty: 'Learning',
+      duration: '~3 min',
+      available: false,
+      features: ['AI opponents', 'Skill improvement', 'No pressure', 'Unlimited attempts']
+    }
+  ];
 
   useEffect(() => {
     if (!user) return;
@@ -111,7 +156,8 @@ export default function DashboardPage() {
         },
         body: JSON.stringify({
           userId: user.uid,
-          language: selectedLanguage
+          language: selectedLanguage,
+          mode: selectedMode
         }),
       });
 
@@ -295,6 +341,74 @@ export default function DashboardPage() {
             )}
           </div>
 
+          {/* Game Modes Section */}
+          <div className="bg-white rounded-xl shadow-lg overflow-hidden">
+            <div className="p-4 sm:p-6 border-b">
+              <h2 className="text-xl sm:text-2xl font-bold text-gray-800">Game Modes</h2>
+              <p className="text-gray-600 mt-1">Choose your preferred way to play</p>
+            </div>
+
+            <div className="p-4 sm:p-6">
+              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+                {gameModes.map((mode) => (
+                  <div
+                    key={mode.id}
+                    className={`relative rounded-lg border-2 p-4 cursor-pointer transition-all duration-200 ${
+                      mode.available
+                        ? selectedMode === mode.id
+                          ? 'border-blue-500 bg-blue-50 shadow-lg transform scale-105'
+                          : 'border-gray-200 hover:border-blue-300 hover:shadow-md'
+                        : 'border-gray-200 bg-gray-50 cursor-not-allowed opacity-60'
+                    }`}
+                    onClick={() => mode.available && setSelectedMode(mode.id)}
+                  >
+                    {!mode.available && (
+                      <div className="absolute top-2 right-2 bg-yellow-400 text-yellow-900 text-xs px-2 py-1 rounded-full font-bold">
+                        Coming Soon
+                      </div>
+                    )}
+                    
+                    <div className="text-center mb-3">
+                      <div className="text-3xl mb-2">{mode.icon}</div>
+                      <h3 className="font-bold text-lg text-gray-800">{mode.name}</h3>
+                      <p className="text-sm text-gray-600 mt-1">{mode.description}</p>
+                    </div>
+
+                    <div className="space-y-2 text-sm">
+                      <div className="flex justify-between">
+                        <span className="text-gray-500">Difficulty:</span>
+                        <span className="font-medium">{mode.difficulty}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-gray-500">Duration:</span>
+                        <span className="font-medium">{mode.duration}</span>
+                      </div>
+                    </div>
+
+                    <div className="mt-3 pt-3 border-t border-gray-200">
+                      <ul className="text-xs text-gray-600 space-y-1">
+                        {mode.features.slice(0, 2).map((feature, idx) => (
+                          <li key={idx} className="flex items-center">
+                            <span className="w-1 h-1 bg-gray-400 rounded-full mr-2"></span>
+                            {feature}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+
+                    {mode.available && selectedMode === mode.id && (
+                      <div className="absolute inset-0 border-2 border-blue-500 rounded-lg pointer-events-none">
+                        <div className="absolute -top-1 -right-1 w-6 h-6 bg-blue-500 rounded-full flex items-center justify-center">
+                          <span className="text-white text-xs">✓</span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
           {/* Game Start Section */}
           {gameState ? (
             gameState.status === "waiting" ? (
@@ -330,7 +444,12 @@ export default function DashboardPage() {
                 
                 {showLanguageSelector ? (
                   <div>
-                    <h2 className="text-xl font-bold mb-4 text-center">Choose Your Language</h2>
+                    <div className="text-center mb-6">
+                      <h2 className="text-xl font-bold mb-2">
+                        Starting {gameModes.find(m => m.id === selectedMode)?.name}
+                      </h2>
+                      <p className="text-gray-600">Choose your preferred language</p>
+                    </div>
                     <LanguageSelector
                       onLanguageSelect={handleLanguageSelect}
                       selectedLanguage={selectedLanguage}
@@ -344,7 +463,7 @@ export default function DashboardPage() {
                         {isStartingGame ? (
                           <>
                             <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                            Starting Game...
+                            Finding Opponent...
                           </>
                         ) : (
                           'Start Game'
@@ -361,15 +480,25 @@ export default function DashboardPage() {
                   </div>
                 ) : (
                   <div className="text-center">
-                    <h2 className="text-xl sm:text-2xl font-bold mb-4">Start a New Game</h2>
+                    <h2 className="text-xl sm:text-2xl font-bold mb-4">
+                      Ready to Play {gameModes.find(m => m.id === selectedMode)?.name}?
+                    </h2>
                     <p className="text-gray-600 mb-6">
-                      Test your knowledge and climb the divisions!
+                      {selectedMode === 'quiz' 
+                        ? '10 questions • Competitive ranked match • Climb the divisions!'
+                        : gameModes.find(m => m.id === selectedMode)?.description
+                      }
                     </p>
                     <button
                       onClick={handleShowLanguageSelector}
-                      className="px-6 sm:px-8 py-3 bg-gradient-to-r from-blue-600 to-purple-600 text-white font-semibold rounded-lg hover:from-blue-700 hover:to-purple-700 transition-colors shadow-lg transform hover:scale-105"
+                      disabled={!gameModes.find(m => m.id === selectedMode)?.available}
+                      className="px-6 sm:px-8 py-3 bg-gradient-to-r from-blue-600 to-purple-600 text-white font-semibold rounded-lg hover:from-blue-700 hover:to-purple-700 transition-colors shadow-lg transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
                     >
-                      🎮 Play Now
+                      {gameModes.find(m => m.id === selectedMode)?.available ? (
+                        <>🎮 Play Now</>
+                      ) : (
+                        <>🔒 Coming Soon</>
+                      )}
                     </button>
                   </div>
                 )}

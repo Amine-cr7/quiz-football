@@ -3,7 +3,7 @@
 
 export default function GameProgress({ 
   currentQuestion, 
-  totalQuestions = 5, 
+  totalQuestions = 10, 
   onForfeit 
 }) {
   const progress = ((currentQuestion + 1) / totalQuestions) * 100;
