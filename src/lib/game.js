@@ -1,6 +1,37 @@
 // src/lib/game.js (Updated with Points System)
 import { adminDb } from '@/lib/firebaseAdmin';
 
+// Clean up old abandoned games (older than 10 minutes)
+async function cleanupOldGames() {
+  try {
+    const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000);
+    const oldGamesSnapshot = await adminDb.collection("games")
+      .where("status", "==", "waiting")
+      .get();
+
+    const batch = adminDb.batch();
+    let deletedCount = 0;
+
+    oldGamesSnapshot.docs.forEach(doc => {
+      const gameData = doc.data();
+      const createdAt = gameData.createdAt?.toDate() || new Date(0);
+      
+      if (createdAt < tenMinutesAgo) {
+        batch.delete(doc.ref);
+        deletedCount++;
+      }
+    });
+
+    if (deletedCount > 0) {
+      await batch.commit();
+      console.log(`Cleaned up ${deletedCount} old games`);
+    }
+  } catch (error) {
+    console.error('Error cleaning up old games:', error);
+    // Don't throw here, as cleanup failure shouldn't prevent game creation
+  }
+}
+
 // Join or create a game
 export async function joinOrCreateGame(userId, preferredLanguage = 'en') {
   if (!userId) {
@@ -10,14 +41,22 @@ export async function joinOrCreateGame(userId, preferredLanguage = 'en') {
   const gamesCol = adminDb.collection("games");
 
   try {
-    // First check if user is already in a waiting or active game
-    const userActiveGames = await gamesCol
+    // Clean up old games first (optional, runs in background)
+    cleanupOldGames().catch(err => console.log('Cleanup warning:', err.message));
+
+    // Check if user is already in any game (simple query)
+    const userGamesSnapshot = await gamesCol
       .where("players", "array-contains", userId)
-      .where("status", "in", ["waiting", "countdown", "playing"])
       .get();
 
-    if (!userActiveGames.empty) {
-      const existingGame = userActiveGames.docs[0];
+    // Filter for active games in application code
+    const activeUserGames = userGamesSnapshot.docs.filter(doc => {
+      const status = doc.data().status;
+      return status === "waiting" || status === "countdown" || status === "playing";
+    });
+
+    if (activeUserGames.length > 0) {
+      const existingGame = activeUserGames[0];
       const gameData = existingGame.data();
       return { 
         gameId: existingGame.id, 
@@ -26,20 +65,35 @@ export async function joinOrCreateGame(userId, preferredLanguage = 'en') {
       };
     }
 
-    // Look for any waiting game (regardless of language)
-    const snapshot = await gamesCol
+    // Look for waiting games (simple query, no composite index needed)
+    const waitingGamesSnapshot = await gamesCol
       .where("status", "==", "waiting")
-      .where("players", "not-in", [[userId]]) // Ensure user isn't already in the game
-      .limit(1)
+      .limit(20) // Get more options to choose from
       .get();
 
-    if (!snapshot.empty) {
-      const doc = snapshot.docs[0];
+    // Filter in application code to avoid complex queries
+    const availableGames = waitingGamesSnapshot.docs.filter(doc => {
+      const gameData = doc.data();
+      const players = gameData.players || [];
+      
+      // Game must not include this user and must have space
+      return !players.includes(userId) && players.length < 2;
+    });
+
+    if (availableGames.length > 0) {
+      // Sort by creation time to join the oldest game first
+      availableGames.sort((a, b) => {
+        const aTime = a.data().createdAt?.toDate() || new Date(0);
+        const bTime = b.data().createdAt?.toDate() || new Date(0);
+        return aTime - bTime;
+      });
+
+      const doc = availableGames[0];
       const gameData = doc.data();
 
-      // Check if game is still waiting and has space
+      // Double-check the game is still available (race condition protection)
       if (gameData.players.length >= 2) {
-        // This game is full, try to find another or create new
+        // Game filled up, try to create new one
         return await createNewGame(userId, preferredLanguage, gamesCol);
       }
 
@@ -60,15 +114,22 @@ export async function joinOrCreateGame(userId, preferredLanguage = 'en') {
         playerScores: updatedPlayerScores,
         status: "countdown",
         gameStartTime: new Date(),
+        lastUpdated: new Date(),
       });
 
       return { gameId: doc.id, status: "countdown" };
     } else {
-      // Create new game
+      // No available games, create new one
       return await createNewGame(userId, preferredLanguage, gamesCol);
     }
   } catch (error) {
     console.error('Error in joinOrCreateGame:', error);
+    
+    // Provide more specific error messages
+    if (error.message.includes('index')) {
+      throw new Error('Database configuration issue. Please try again in a moment.');
+    }
+    
     throw new Error(`Failed to join or create game: ${error.message}`);
   }
 }
@@ -87,16 +148,16 @@ async function createNewGame(userId, preferredLanguage, gamesCol) {
       const data = doc.data();
       return {
         id: doc.id,
-        question: data.question[preferredLanguage] || data.question.en || data.question,
+        question: data.question?.[preferredLanguage] || data.question?.en || data.question,
         options: data.options,
         correctAnswer: data.correctAnswer,
         translations: {
-          en: data.question.en || data.question,
-          ar: data.question.ar || data.question,
-          fr: data.question.fr || data.question,
-          de: data.question.de || data.question,
-          es: data.question.es || data.question,
-          pt: data.question.pt || data.question
+          en: data.question?.en || data.question,
+          ar: data.question?.ar || data.question,
+          fr: data.question?.fr || data.question,
+          de: data.question?.de || data.question,
+          es: data.question?.es || data.question,
+          pt: data.question?.pt || data.question
         }
       };
     });
@@ -110,7 +171,7 @@ async function createNewGame(userId, preferredLanguage, gamesCol) {
       .sort(() => Math.random() - 0.5)
       .slice(0, 5);
 
-    const docRef = await gamesCol.add({
+    const gameData = {
       players: [userId],
       playerLanguages: { [userId]: preferredLanguage },
       questions: selectedQuestions,
@@ -122,7 +183,10 @@ async function createNewGame(userId, preferredLanguage, gamesCol) {
       gameEndTime: null,
       questionStartTime: null,
       createdAt: new Date(),
-    });
+      lastUpdated: new Date(),
+    };
+
+    const docRef = await gamesCol.add(gameData);
 
     return { gameId: docRef.id, status: "waiting" };
   } catch (error) {
