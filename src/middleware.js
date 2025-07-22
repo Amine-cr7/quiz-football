@@ -13,14 +13,14 @@ export async function middleware(request) {
     const { pathname } = request.nextUrl;
 
     // Public routes that don't require authentication
-    const publicRoutes = ['/auth', '/'];
+    const publicRoutes = ['/auth'];
     const isPublicRoute = publicRoutes.includes(pathname);
     
     // Admin routes that require admin privileges
     const isAdminRoute = pathname.startsWith('/admin');
     
     // Protected routes that require authentication (from your (main) route group)
-    const protectedRoutes = ['/dashboard', '/game', '/profile'];
+    const protectedRoutes = ['/dashboard', '/game', '/profile', '/leaderboard'];
     const isProtectedRoute = protectedRoutes.some(route => pathname.startsWith(route));
 
     // If trying to access protected route without token
@@ -46,7 +46,30 @@ export async function middleware(request) {
             }
         } catch (error) {
             // Token invalid, redirect to auth
+            console.error('Admin verification error:', error);
             return NextResponse.redirect(new URL('/auth', request.url));
+        }
+    }
+
+    // If authenticated user tries to access home page, redirect to dashboard
+    if (pathname === '/' && token) {
+        try {
+            const response = await fetch(`${request.nextUrl.origin}/api/auth/verify-admin`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ token })
+            });
+
+            if (response.ok) {
+                return NextResponse.redirect(new URL('/admin', request.url));
+            } else {
+                return NextResponse.redirect(new URL('/dashboard', request.url));
+            }
+        } catch (error) {
+            console.error('Home page auth check error:', error);
+            return NextResponse.redirect(new URL('/dashboard', request.url));
         }
     }
 
@@ -68,6 +91,7 @@ export async function middleware(request) {
                 return NextResponse.redirect(new URL('/dashboard', request.url));
             }
         } catch (error) {
+            console.error('Auth page redirect error:', error);
             return NextResponse.redirect(new URL('/dashboard', request.url));
         }
     }

@@ -6,7 +6,7 @@ export async function POST(request) {
   const { idToken } = await request.json();
 
   try {
-    const decoded = await adminAuth.verifyIdToken(idToken);
+    await adminAuth.verifyIdToken(idToken);
     const expiresIn = 60 * 60 * 24 * 5; // 5 days in seconds
 
     const response = NextResponse.json({ success: true });
@@ -22,6 +22,7 @@ export async function POST(request) {
 
     return response;
   } catch (err) {
+    console.error('Session token verification error:', err);
     return NextResponse.json({ error: 'Invalid token' }, { status: 401 });
   }
 }
@@ -29,5 +30,6 @@ export async function POST(request) {
 export async function DELETE() {
   const response = NextResponse.json({ success: true });
   response.cookies.delete('__session');
+  
   return response;
 }
