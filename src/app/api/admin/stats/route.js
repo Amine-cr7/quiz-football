@@ -3,7 +3,7 @@ import { NextResponse } from 'next/server';
 import { adminAuth, adminDb } from '@/lib/firebaseAdmin';
 import { cookies } from 'next/headers';
 
-export async function GET(request) {
+export async function GET() {
   try {
     const cookieStore = await cookies();
     const token = cookieStore.get('__session')?.value;
@@ -18,28 +18,30 @@ export async function GET(request) {
       return NextResponse.json({ error: 'Admin access required' }, { status: 403 });
     }
 
-    // Fetch statistics from Firestore
-    const [questionsSnapshot, categoriesSnapshot, usersSnapshot, gamesSnapshot] = await Promise.all([
-      adminDb.collection('questions').get(),
-      adminDb.collection('categories').get(),
-      adminDb.collection('users').get(),
-      adminDb.collection('games').get()
+    // Fetch stats from Firestore
+    const usersRef = adminDb.collection('users');
+    const questionsRef = adminDb.collection('questions');
+    const gamesRef = adminDb.collection('games');
+
+    const [usersSnapshot, questionsSnapshot, gamesSnapshot] = await Promise.all([
+      usersRef.get(),
+      questionsRef.get(),
+      gamesRef.get()
     ]);
 
     const stats = {
-      totalQuestions: questionsSnapshot.size,
-      totalCategories: categoriesSnapshot.size,
       totalUsers: usersSnapshot.size,
-      totalGames: gamesSnapshot.size
+      totalQuestions: questionsSnapshot.size,
+      totalGames: gamesSnapshot.size,
+      recentActivity: [] // You can implement this based on your needs
     };
 
     return NextResponse.json(stats);
-
   } catch (error) {
     console.error('Stats fetch error:', error);
-    return NextResponse.json({ 
+    return NextResponse.json({
       error: 'Failed to fetch stats',
-      details: error.message 
+      details: error.message
     }, { status: 500 });
   }
 }

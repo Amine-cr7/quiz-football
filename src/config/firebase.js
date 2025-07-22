@@ -1,6 +1,6 @@
 // config/firebase.js
 import { initializeApp } from 'firebase/app';
-import { getAuth, GoogleAuthProvider, FacebookAuthProvider } from 'firebase/auth';
+import { getAuth, GoogleAuthProvider } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
 
 const firebaseConfig = {
@@ -19,8 +19,10 @@ export const db = getFirestore(app);
 
 // Configure providers
 export const googleProvider = new GoogleAuthProvider();
-googleProvider.addScope('email');
-googleProvider.addScope('profile');
 
+// Set Google provider settings
+googleProvider.setCustomParameters({
+  prompt: 'select_account',
+});
 
 export default app;

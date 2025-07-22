@@ -3,53 +3,109 @@ import { adminDb } from '@/lib/firebaseAdmin';
 
 // Join or create a game
 export async function joinOrCreateGame(userId, preferredLanguage = 'en') {
+  if (!userId) {
+    throw new Error('User ID is required');
+  }
+
   const gamesCol = adminDb.collection("games");
 
-  // Look for any waiting game (regardless of language)
-  const snapshot = await gamesCol.where("status", "==", "waiting").limit(1).get();
+  try {
+    // First check if user is already in a waiting or active game
+    const userActiveGames = await gamesCol
+      .where("players", "array-contains", userId)
+      .where("status", "in", ["waiting", "countdown", "playing"])
+      .get();
 
-  if (!snapshot.empty) {
-    const doc = snapshot.docs[0];
-    const gameData = doc.data();
+    if (!userActiveGames.empty) {
+      const existingGame = userActiveGames.docs[0];
+      const gameData = existingGame.data();
+      return { 
+        gameId: existingGame.id, 
+        status: gameData.status,
+        message: "You are already in an active game"
+      };
+    }
 
-    // Add the new player with their language preference
-    const updatedPlayers = [...gameData.players, userId];
-    const updatedPlayerLanguages = {
-      ...gameData.playerLanguages,
-      [userId]: preferredLanguage
-    };
-    const updatedPlayerScores = {
-      ...gameData.playerScores,
-      [userId]: 0
-    };
+    // Look for any waiting game (regardless of language)
+    const snapshot = await gamesCol
+      .where("status", "==", "waiting")
+      .where("players", "not-in", [[userId]]) // Ensure user isn't already in the game
+      .limit(1)
+      .get();
 
-    await doc.ref.update({
-      players: updatedPlayers,
-      playerLanguages: updatedPlayerLanguages,
-      playerScores: updatedPlayerScores,
-      status: "countdown",
-    });
+    if (!snapshot.empty) {
+      const doc = snapshot.docs[0];
+      const gameData = doc.data();
 
-    return { gameId: doc.id, status: "countdown" };
-  } else {
+      // Check if game is still waiting and has space
+      if (gameData.players.length >= 2) {
+        // This game is full, try to find another or create new
+        return await createNewGame(userId, preferredLanguage, gamesCol);
+      }
+
+      // Add the new player with their language preference
+      const updatedPlayers = [...gameData.players, userId];
+      const updatedPlayerLanguages = {
+        ...gameData.playerLanguages,
+        [userId]: preferredLanguage
+      };
+      const updatedPlayerScores = {
+        ...gameData.playerScores,
+        [userId]: 0
+      };
+
+      await doc.ref.update({
+        players: updatedPlayers,
+        playerLanguages: updatedPlayerLanguages,
+        playerScores: updatedPlayerScores,
+        status: "countdown",
+        gameStartTime: new Date(),
+      });
+
+      return { gameId: doc.id, status: "countdown" };
+    } else {
+      // Create new game
+      return await createNewGame(userId, preferredLanguage, gamesCol);
+    }
+  } catch (error) {
+    console.error('Error in joinOrCreateGame:', error);
+    throw new Error(`Failed to join or create game: ${error.message}`);
+  }
+}
+
+// Helper function to create a new game
+async function createNewGame(userId, preferredLanguage, gamesCol) {
+  try {
     // Get random questions from the questions collection
     const questionsSnapshot = await adminDb.collection('questions').get();
-    const allQuestions = questionsSnapshot.docs.map(doc => ({
-      id: doc.id,
-      question: doc.data().question[preferredLanguage] || doc.data().question.en,
-      options: doc.data().options,
-      correctAnswer: doc.data().correctAnswer,
-      translations: {
-        en: doc.data().question.en,
-        ar: doc.data().question.ar,
-        fr: doc.data().question.fr,
-        de: doc.data().question.de,
-        es: doc.data().question.es,
-        pt: doc.data().question.pt
-      }
-    }));
+    
+    if (questionsSnapshot.empty) {
+      throw new Error('No questions available in the database');
+    }
+
+    const allQuestions = questionsSnapshot.docs.map(doc => {
+      const data = doc.data();
+      return {
+        id: doc.id,
+        question: data.question[preferredLanguage] || data.question.en || data.question,
+        options: data.options,
+        correctAnswer: data.correctAnswer,
+        translations: {
+          en: data.question.en || data.question,
+          ar: data.question.ar || data.question,
+          fr: data.question.fr || data.question,
+          de: data.question.de || data.question,
+          es: data.question.es || data.question,
+          pt: data.question.pt || data.question
+        }
+      };
+    });
 
     // Randomly select 5 questions
+    if (allQuestions.length < 5) {
+      throw new Error('Not enough questions available in the database');
+    }
+
     const selectedQuestions = allQuestions
       .sort(() => Math.random() - 0.5)
       .slice(0, 5);
@@ -65,9 +121,13 @@ export async function joinOrCreateGame(userId, preferredLanguage = 'en') {
       gameStartTime: null,
       gameEndTime: null,
       questionStartTime: null,
+      createdAt: new Date(),
     });
 
     return { gameId: docRef.id, status: "waiting" };
+  } catch (error) {
+    console.error('Error creating new game:', error);
+    throw new Error(`Failed to create new game: ${error.message}`);
   }
 }
 
