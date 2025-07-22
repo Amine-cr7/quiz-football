@@ -106,7 +106,7 @@ export default function GameBoard({ game, onAnswer, onForfeit }) {
         {/* Progress Bar */}
         <GameProgress 
           currentQuestion={currentQuestion}
-          totalQuestions={5}
+          totalQuestions={10}
           onForfeit={handleShowForfeit}
         />
 
