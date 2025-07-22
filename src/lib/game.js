@@ -13,11 +13,16 @@ export async function joinOrCreateGame(userId, preferredLanguage = 'en') {
     // First check if user is already in a waiting or active game
     const userActiveGames = await gamesCol
       .where("players", "array-contains", userId)
-      .where("status", "in", ["waiting", "countdown", "playing"])
       .get();
 
-    if (!userActiveGames.empty) {
-      const existingGame = userActiveGames.docs[0];
+    // Filter for active games (waiting, countdown, playing)
+    const activeUserGames = userActiveGames.docs.filter(doc => {
+      const status = doc.data().status;
+      return status === "waiting" || status === "countdown" || status === "playing";
+    });
+
+    if (activeUserGames.length > 0) {
+      const existingGame = activeUserGames[0];
       const gameData = existingGame.data();
       return { 
         gameId: existingGame.id, 
@@ -26,22 +31,22 @@ export async function joinOrCreateGame(userId, preferredLanguage = 'en') {
       };
     }
 
-    // Look for any waiting game (regardless of language)
-    const snapshot = await gamesCol
+    // Look for any waiting game with a simple query
+    const waitingGamesSnapshot = await gamesCol
       .where("status", "==", "waiting")
-      .where("players", "not-in", [[userId]]) // Ensure user isn't already in the game
-      .limit(1)
+      .limit(10) // Get a few options to filter from
       .get();
 
-    if (!snapshot.empty) {
-      const doc = snapshot.docs[0];
+    // Filter games where user is not already a player and has space
+    const availableGames = waitingGamesSnapshot.docs.filter(doc => {
       const gameData = doc.data();
+      const players = gameData.players || [];
+      return !players.includes(userId) && players.length < 2;
+    });
 
-      // Check if game is still waiting and has space
-      if (gameData.players.length >= 2) {
-        // This game is full, try to find another or create new
-        return await createNewGame(userId, preferredLanguage, gamesCol);
-      }
+    if (availableGames.length > 0) {
+      const doc = availableGames[0];
+      const gameData = doc.data();
 
       // Add the new player with their language preference
       const updatedPlayers = [...gameData.players, userId];
